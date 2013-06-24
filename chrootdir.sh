@@ -153,13 +153,8 @@ BASEDIR=${CHROOTDIR}/${CHROOTDEF}
 
 if [ ${DELETE} -eq 1 ]; then
   delete_chroot 
-  exit 0
 elif [ ${INITIALIZE} -eq 1 ]; then
    init_chroot
-   exit 0
-else
-echo else use
-
 fi
 
-exit
+exit 0
