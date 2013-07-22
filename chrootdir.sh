@@ -6,26 +6,45 @@ CHROOTCONF=/etc/schroot/schroot.conf
 MIRROR=http://ftp.belnet.be/ubuntu.com/ubuntu/
 
 USER_ID=""
+CHROOT_ID=""
 SUITE=""
-INITIALIZE=0
-DELETE=0
+INITIALIZE=1    # Default value
 
+function print_help 
+{
+   echo "Usage: chrootdir -u <user-id> -n <chrootname> [-s <suite>] [-h] [-d] "
+   echo "       -u <user-id>: the user which is allowed to access the chroot"
+   echo "       -n <chrootname>: a unique id used to identify of the chroot"
+   echo "       -s <suite>: the suite may be the release code name of the Debian/Ubuntu system"
+   echo "       -d: delete the chroot environment identified by the chrootname" 
+   echo "       -h: shows this help message"
+
+}
+
+function default_suite 
+{
+  SUITE=$(grep DISTRIB_CODENAME /etc/lsb-release | awk -F= '{print $2}')
+}
 
 function  initialize
 {
-   while getopts ":idu:s:" opt; do
+   while getopts ":hdu:s:n:" opt; do
       case ${opt} in
          u) 
             USER_ID=${OPTARG}
             ;;
+         n) 
+            CHROOT_ID=${OPTARG}
+            ;;
          s)
             SUITE=${OPTARG}
             ;;
-         i) 
-            INITIALIZE=1
-            ;;
          d)
-            DELETE=1
+            INITIALIZE=0
+            ;;
+         h)
+            print_help
+            exit 0
             ;;
          \?)
             echo "Invalid option: -${OPTARG}" >&2
@@ -38,18 +57,18 @@ function  initialize
       esac
    done
    
-   if [ ! ${USER_ID} ]; then
+   if [ -z ${USER_ID} ]; then
       echo "The user argument is mandatory!" >&2
       exit 1
    fi
-
-   if [[ ${DELETE} -eq 1 && ${INITIALIZE} -eq 1 ]]; then
-      echo "It is impossible to delete and initialize at the same time!" >&2
+ 
+   if [ -z ${CHROOT_ID} ]; then
+      echo "The name of the chroot is mandatory!" >&2
       exit 1
    fi
 
-   if [ ! ${SUITE} ]; then
-      SUITE="precise"
+   if [ -z ${SUITE} ]; then
+      default_suite
    fi
 }
 
@@ -77,7 +96,7 @@ function init_chroot
       exit 1
    fi
    if grep ${CHROOTDEF} ${CHROOTCONF}; then
-      echo "A chroot definition with the same name already exists (${CHROOTDEF}" >&2
+      echo "A chroot definition with the same name already exists (${CHROOTDEF})" >&2
       exit 1
    fi
 
@@ -87,6 +106,12 @@ function init_chroot
       exit 1
    fi
    
+   debootstrap --variant=buildd ${SUITE} ${BASEDIR} ${MIRROR}
+   if [[ $? -ne 0 ]]; then
+      rm -rf ${BASEDIR}
+      exit 1
+   fi
+
    # config file todo
    TIMESTAMP=$(date +%Y%m%d%H%M%S)
    cp ${CHROOTCONF} ${CHROOTCONF}.${TIMESTAMP}
@@ -103,17 +128,18 @@ description=Chroot of ${USER_ID} on ${BASEDIR}
 message-verbosity=normal
 directory=${BASEDIR}
 users=${USER_ID}
-groups=sbuild
+#groups=${USER_ID}
 root-users=root
 root-groups=root
 preserve-environment=false
 EOF
 
-   debootstrap --variant=buildd ${SUITE} ${BASEDIR} ${MIRROR}
 
    # install sudo
-   chroot ${BASEDIR} apt-get install sudo
-   echo $?
+   schroot -c ${CHROOTDEF} -u root apt-get install sudo
+   if [ $? -ne 0 ]; then
+      exit 1
+   fi
 }
 
 
@@ -128,6 +154,7 @@ function delete_chroot
    if egrep "^\[${CHROOTDEF}\]" ${CHROOTCONF} >> /dev/null 2>&1; 
    then
       # Remove section from config file
+      echo "Removing section ${CHROOTDEF} from ${CHROOTCONF}"
       perl -i -pe "BEGIN{undef $/;} s/^\[${CHROOTDEF}\][^\[]*//smg" ${CHROOTCONF}
    fi
 
@@ -144,16 +171,25 @@ function delete_chroot
    fi
 }
 
+
+
+# script must be executed with root permissions
+if [ "$(id -u)" != "0" ]; then
+   echo "This script must be executed with root permissions!" >&2
+   exit 1
+fi
+
 initialize "$@"
 user_exists "${USER_ID}"
 check_config
 
-CHROOTDEF=${USER_ID}-${SUITE}
-BASEDIR=${CHROOTDIR}/${CHROOTDEF}
 
-if [ ${DELETE} -eq 1 ]; then
+CHROOTDEF=${CHROOT_ID}     # CHROOT DEFINITION
+BASEDIR=${CHROOTDIR}/${CHROOTDEF}   # DIRECTORY WHERE CHROOT WILL BE INSTALLED
+
+if [[ ${INITIALIZE} -eq 0 ]]; then
   delete_chroot 
-elif [ ${INITIALIZE} -eq 1 ]; then
+else
    init_chroot
 fi
 
