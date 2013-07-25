@@ -20,6 +20,13 @@ You need to install the schroot en debootstrap packages
 Usage:
 ------
 
+    Usage: chrootdir -u <user-id> -n <chrootname> [-s <suite>] [-h] [-d]  
+           -u <user-id>: the user which is allowed to access the chroot  
+           -n <chrootname>: a unique id used to identify of the chroot   
+           -s <suite>: the suite may be the release code name of the Debian/Ubuntu system   
+           -d: delete the chroot environment identified by the chrootname  
+           -h: shows this help message  
+
 Examples:
 ---------
 
